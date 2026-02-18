@@ -127,6 +127,7 @@ html, body {
   align-content: center;
 }
 
+/* --- KNOB UNIT: entire div is the touch target --- */
 .knob-unit {
   display: -webkit-flex;
   display: flex;
@@ -143,6 +144,12 @@ html, body {
   background: rgba(0,0,0,0.02);
   border: 1px solid #d0d0d0;
   border-radius: 3px;
+  cursor: pointer;
+  -webkit-overflow-scrolling: auto;
+}
+.knob-unit.touching {
+  background: rgba(0,0,0,0.05);
+  border-color: #aaa;
 }
 .knob-label {
   font-size: 0.5rem;
@@ -183,6 +190,9 @@ html, body {
   font-size: 1.3rem;
   font-family: 'Courier New', monospace;
   font-weight: bold;
+  cursor: pointer;
+  -webkit-transition: all 0.08s;
+  transition: all 0.08s;
   border-radius: 4px;
   outline: none;
   -webkit-appearance: none;
@@ -205,6 +215,22 @@ html, body {
   right: 0;
   height: 2px;
   background: transparent;
+  -webkit-transition: background 0.08s;
+  transition: background 0.08s;
+}
+.key:active,
+.key.active {
+  background: #1a1a1e;
+  color: #fff;
+  border-color: #1a1a1e;
+  -webkit-box-shadow: 0 2px 12px rgba(0,0,0,0.2);
+  box-shadow: 0 2px 12px rgba(0,0,0,0.2);
+  -webkit-transform: scale(0.97);
+  transform: scale(0.97);
+}
+.key:active::before,
+.key.active::before {
+  background: #333;
 }
 .key span {
   font-size: 0.5rem;
@@ -234,14 +260,30 @@ html, body {
   font-weight: bold;
   letter-spacing: 3px;
   padding: 12px 28px;
+  cursor: pointer;
   border-radius: 3px;
   outline: none;
   -webkit-appearance: none;
+  -webkit-transition: all 0.12s;
+  transition: all 0.12s;
+}
+.btn-transport.hold-on {
+  border-color: #c0392b;
+  color: #c0392b;
+  background: #fdf2f1;
+  -webkit-box-shadow: none;
+  box-shadow: none;
 }
 .btn-transport.drums-on {
   border-color: #b8860b;
   color: #b8860b;
   background: #fdf8ee;
+  -webkit-box-shadow: none;
+  box-shadow: none;
+}
+.btn-transport.stop-btn:active {
+  border-color: #222;
+  color: #222;
 }
 
 .led {
@@ -250,6 +292,14 @@ html, body {
   border-radius: 50%;
   background: #ccc;
   border: 1px solid #aaa;
+  -webkit-transition: all 0.15s;
+  transition: all 0.15s;
+}
+.led.on {
+  background: #c0392b;
+  -webkit-box-shadow: 0 0 6px rgba(192,57,43,0.4);
+  box-shadow: 0 0 6px rgba(192,57,43,0.4);
+  border-color: #c0392b;
 }
 .led.on-amber {
   background: #b8860b;
@@ -267,22 +317,22 @@ html, body {
   <div class="panel-controls">
     <div class="ctrl-title">Parameters</div>
     <div class="knobs-grid">
-      <div class="knob-unit" id="unit-tempo">
+      <div class="knob-unit" id="unit-tempo" data-knob="tempo">
         <div class="knob-label">Tempo</div>
         <canvas class="knob-canvas" id="knob-tempo" width="160" height="160"></canvas>
         <div class="knob-value" id="val-tempo">120 BPM</div>
       </div>
-      <div class="knob-unit" id="unit-delay">
+      <div class="knob-unit" id="unit-delay" data-knob="delay">
         <div class="knob-label">Delay</div>
         <canvas class="knob-canvas" id="knob-delay" width="160" height="160"></canvas>
         <div class="knob-value" id="val-delay">0%</div>
       </div>
-      <div class="knob-unit" id="unit-reverb">
+      <div class="knob-unit" id="unit-reverb" data-knob="reverb">
         <div class="knob-label">Reverb</div>
         <canvas class="knob-canvas" id="knob-reverb" width="160" height="160"></canvas>
         <div class="knob-value" id="val-reverb">0%</div>
       </div>
-      <div class="knob-unit" id="unit-drive">
+      <div class="knob-unit" id="unit-drive" data-knob="drive">
         <div class="knob-label">Drive</div>
         <canvas class="knob-canvas" id="knob-drive" width="160" height="160"></canvas>
         <div class="knob-value" id="val-drive">0%</div>
@@ -298,19 +348,19 @@ html, body {
   <!-- BOTTOM: Keys + Transport -->
   <div class="panel-keys">
     <div class="keys-row">
-      <button class="key" id="key-4">G<span>E2</span></button>
-      <button class="key" id="key-5">H<span>G#2</span></button>
-      <button class="key" id="key-0">A<span>C#3</span></button>
-      <button class="key" id="key-1">S<span>E3</span></button>
-      <button class="key" id="key-2">D<span>G#3</span></button>
-      <button class="key" id="key-3">F<span>B3</span></button>
+      <button class="key" id="key-4" data-note="4">G<span>E2</span></button>
+      <button class="key" id="key-5" data-note="5">H<span>G#2</span></button>
+      <button class="key" id="key-0" data-note="0">A<span>C#3</span></button>
+      <button class="key" id="key-1" data-note="1">S<span>E3</span></button>
+      <button class="key" id="key-2" data-note="2">D<span>G#3</span></button>
+      <button class="key" id="key-3" data-note="3">F<span>B3</span></button>
     </div>
     <div class="transport-row">
-      <div class="led on-amber" id="drums-led"></div>
+      <div class="led" id="drums-led"></div>
       <button class="btn-transport drums-on" id="drums-btn">DRUMS</button>
       <div class="led" id="hold-led"></div>
       <button class="btn-transport" id="hold-btn">HOLD</button>
-      <button class="btn-transport" id="stop-btn">STOP</button>
+      <button class="btn-transport stop-btn" id="stop-btn">STOP</button>
     </div>
   </div>
 
@@ -320,7 +370,31 @@ html, body {
 (function () {
   "use strict";
 
-  // ====== STATIC KNOB RENDER ======
+  // ====== STATE ======
+  var audioCtx = null;
+  var analyser = null;
+  var masterGain = null;
+  var delayNode = null;
+  var delayFeedback = null;
+  var delayWet = null;
+  var convolverNode = null;
+  var reverbWet = null;
+  var reverbDry = null;
+  var distortionNode = null;
+  var distortionWet = null;
+  var distortionDry = null;
+
+  var isPlaying = false;
+  var currentNoteIndex = 0;
+  var nextStepTime = 0;
+  var stepCount = 0;
+  var activeKey = null;
+  var holdMode = false;
+  var holdActive = false;
+
+  var baseNotes = [138.59, 164.81, 207.65, 246.94, 82.41, 103.83];
+  var keyMapObj = { "a": 0, "s": 1, "d": 2, "f": 3, "g": 4, "h": 5 };
+  var drumsOn = true;
 
   var params = {
     tempo: 0.38,
@@ -329,64 +403,255 @@ html, body {
     drive: 0
   };
 
-  var knobConfigs = [
-    { id: "tempo",  param: "tempo",  valId: "val-tempo",
-      format: function (v) { return Math.round(60 + v * 140) + " BPM"; }, color: "#2a2a2a" },
-    { id: "delay",  param: "delay",  valId: "val-delay",
-      format: function (v) { return Math.round(v * 100) + "%"; }, color: "#b8860b" },
-    { id: "reverb", param: "reverb", valId: "val-reverb",
-      format: function (v) { return Math.round(v * 100) + "%"; }, color: "#2d6da4" },
-    { id: "drive",  param: "drive",  valId: "val-drive",
-      format: function (v) { return Math.round(v * 100) + "%"; }, color: "#c0392b" }
-  ];
+  function bpmFromParam(v) {
+    return Math.round(60 + v * 140);
+  }
+  function stepDuration() {
+    return 60 / bpmFromParam(params.tempo) / 2;
+  }
 
-  function drawKnob(cfg) {
-    var canvas = document.getElementById("knob-" + cfg.id);
-    var c = canvas.getContext("2d");
-    var v = params[cfg.param];
-    var cx = 80, cy = 80, r = 56;
-    var startAngle = 0.75 * Math.PI;
-
-    c.clearRect(0, 0, 160, 160);
-
-    // Track background
-    c.beginPath();
-    c.arc(cx, cy, r, startAngle, 0.25 * Math.PI, false);
-    c.lineWidth = 6;
-    c.strokeStyle = "#ddd";
-    c.stroke();
-
-    // Active arc
-    if (v > 0.005) {
-      c.beginPath();
-      c.arc(cx, cy, r, startAngle, startAngle + v * 1.5 * Math.PI, false);
-      c.lineWidth = 6;
-      c.strokeStyle = cfg.color;
-      c.stroke();
+  // ====== PREVENT ALL iOS SCROLL/BOUNCE ======
+  document.addEventListener("touchmove", function (e) {
+    if (activeKnobCfg) {
+      e.preventDefault();
+      return;
     }
+    e.preventDefault();
+  }, false);
 
-    // Knob body
-    c.beginPath();
-    c.arc(cx, cy, 36, 0, 2 * Math.PI);
-    c.fillStyle = "#fff";
-    c.strokeStyle = "#bbb";
-    c.lineWidth = 2;
-    c.fill();
-    c.stroke();
+  // ====== AUDIO INIT ======
 
-    // Indicator line
-    var indAngle = startAngle + v * 1.5 * Math.PI;
-    c.beginPath();
-    c.moveTo(cx + Math.cos(indAngle) * 16, cy + Math.sin(indAngle) * 16);
-    c.lineTo(cx + Math.cos(indAngle) * 33, cy + Math.sin(indAngle) * 33);
-    c.lineWidth = 4;
-    c.strokeStyle = cfg.color;
-    c.lineCap = "round";
-    c.stroke();
-    c.lineCap = "butt";
+  function buildReverbIR(duration, decay) {
+    var length = audioCtx.sampleRate * duration;
+    var buffer = audioCtx.createBuffer(2, length, audioCtx.sampleRate);
+    for (var ch = 0; ch < 2; ch++) {
+      var data = buffer.getChannelData(ch);
+      for (var i = 0; i < length; i++) {
+        data[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / length, decay);
+      }
+    }
+    return buffer;
+  }
 
-    document.getElementById(cfg.valId).textContent = cfg.format(v);
-    document.getElementById(cfg.valId).style.color = cfg.color;
+  function makeDistortionCurve(amount) {
+    var samples = 44100;
+    var curve = new Float32Array(samples);
+    var k = amount * 50;
+    for (var i = 0; i < samples; i++) {
+      var x = i * 2 / samples - 1;
+      curve[i] = (1 + k) * x / (1 + k * Math.abs(x));
+    }
+    return curve;
+  }
+
+  function initAudio() {
+    if (audioCtx) return;
+    var AC = window.AudioContext || window.webkitAudioContext;
+    audioCtx = new AC();
+
+    analyser = audioCtx.createAnalyser();
+    analyser.fftSize = 256;
+    analyser.smoothingTimeConstant = 0.8;
+
+    masterGain = audioCtx.createGain();
+    masterGain.gain.value = 0.8;
+
+    // Delay
+    delayNode = audioCtx.createDelay(1.0);
+    delayNode.delayTime.value = 0.3;
+    delayFeedback = audioCtx.createGain();
+    delayFeedback.gain.value = 0.35;
+    delayWet = audioCtx.createGain();
+    delayWet.gain.value = 0;
+    delayNode.connect(delayFeedback);
+    delayFeedback.connect(delayNode);
+    delayNode.connect(delayWet);
+
+    // Reverb
+    convolverNode = audioCtx.createConvolver();
+    convolverNode.buffer = buildReverbIR(2.5, 3);
+    reverbWet = audioCtx.createGain();
+    reverbWet.gain.value = 0;
+    reverbDry = audioCtx.createGain();
+    reverbDry.gain.value = 1;
+    convolverNode.connect(reverbWet);
+
+    // Distortion
+    distortionNode = audioCtx.createWaveShaper();
+    distortionNode.curve = makeDistortionCurve(0);
+    distortionNode.oversample = "4x";
+    distortionWet = audioCtx.createGain();
+    distortionWet.gain.value = 0;
+    distortionDry = audioCtx.createGain();
+    distortionDry.gain.value = 1;
+    distortionNode.connect(distortionWet);
+
+    // Compressor
+    var compressor = audioCtx.createDynamicsCompressor();
+    compressor.threshold.setValueAtTime(-20, audioCtx.currentTime);
+    compressor.ratio.setValueAtTime(8, audioCtx.currentTime);
+
+    // Routing
+    analyser.connect(delayNode);
+    analyser.connect(distortionNode);
+    analyser.connect(distortionDry);
+
+    distortionWet.connect(convolverNode);
+    distortionWet.connect(reverbDry);
+    distortionDry.connect(convolverNode);
+    distortionDry.connect(reverbDry);
+
+    reverbWet.connect(masterGain);
+    reverbDry.connect(masterGain);
+    delayWet.connect(masterGain);
+
+    masterGain.connect(compressor);
+    compressor.connect(audioCtx.destination);
+  }
+
+  // ====== EFFECT UPDATES ======
+
+  function updateDelay(v) {
+    params.delay = v;
+    if (!delayWet) return;
+    delayWet.gain.value = v * 0.6;
+    delayFeedback.gain.value = 0.2 + v * 0.45;
+    delayNode.delayTime.value = 0.15 + v * 0.35;
+  }
+
+  function updateReverb(v) {
+    params.reverb = v;
+    if (!reverbWet) return;
+    reverbWet.gain.value = v * 0.7;
+    reverbDry.gain.value = 1 - v * 0.3;
+  }
+
+  function updateDrive(v) {
+    params.drive = v;
+    if (!distortionNode) return;
+    distortionNode.curve = makeDistortionCurve(v);
+    distortionWet.gain.value = v;
+    distortionDry.gain.value = 1 - v * 0.7;
+  }
+
+  // ====== CORE SEQUENCE ======
+
+  function startSequence(index) {
+    initAudio();
+    if (audioCtx.state === "suspended") audioCtx.resume();
+    currentNoteIndex = index;
+    highlightKey(index);
+    if (!isPlaying) {
+      isPlaying = true;
+      nextStepTime = audioCtx.currentTime;
+      scheduler();
+    }
+  }
+
+  function stopSequence() {
+    if (holdMode && isPlaying) {
+      holdActive = true;
+      return;
+    }
+    doStop();
+  }
+
+  function doStop() {
+    isPlaying = false;
+    holdActive = false;
+    stepCount = 0;
+    var keys = document.querySelectorAll(".key");
+    for (var i = 0; i < keys.length; i++) {
+      keys[i].className = keys[i].className.replace(/\bactive\b/g, "").replace(/\s+/g, " ").trim();
+    }
+  }
+
+  function highlightKey(index) {
+    var keys = document.querySelectorAll(".key");
+    for (var i = 0; i < keys.length; i++) {
+      keys[i].className = keys[i].className.replace(/\bactive\b/g, "").replace(/\s+/g, " ").trim();
+    }
+    var el = document.getElementById("key-" + index);
+    if (el) el.className = el.className + " active";
+  }
+
+  // ====== SYNTH / DRUMS ======
+
+  function createSynth(freq, time) {
+    var osc1 = audioCtx.createOscillator();
+    var osc2 = audioCtx.createOscillator();
+    var gain = audioCtx.createGain();
+    var filter = audioCtx.createBiquadFilter();
+    osc1.type = "sawtooth";
+    osc2.type = "sawtooth";
+    osc1.frequency.value = freq;
+    osc2.frequency.value = freq;
+    osc1.detune.value = -10;
+    osc2.detune.value = 10;
+    filter.type = "lowpass";
+    filter.Q.value = 12;
+    filter.frequency.setValueAtTime(4000, time);
+    filter.frequency.exponentialRampToValueAtTime(1000, time + 0.1);
+    gain.gain.setValueAtTime(0, time);
+    gain.gain.linearRampToValueAtTime(0.25, time + 0.01);
+    gain.gain.exponentialRampToValueAtTime(0.001, time + 0.4);
+    osc1.connect(filter);
+    osc2.connect(filter);
+    filter.connect(gain);
+    gain.connect(analyser);
+    osc1.start(time);
+    osc2.start(time);
+    osc1.stop(time + 0.5);
+    osc2.stop(time + 0.5);
+  }
+
+  function playKick(time) {
+    var osc = audioCtx.createOscillator();
+    var gain = audioCtx.createGain();
+    osc.frequency.setValueAtTime(150, time);
+    osc.frequency.exponentialRampToValueAtTime(0.01, time + 0.5);
+    gain.gain.setValueAtTime(0.6, time);
+    gain.gain.exponentialRampToValueAtTime(0.001, time + 0.5);
+    osc.connect(gain);
+    gain.connect(analyser);
+    osc.start(time);
+    osc.stop(time + 0.5);
+  }
+
+  function playSnare(time) {
+    var bufferSize = audioCtx.sampleRate * 0.2;
+    var buffer = audioCtx.createBuffer(1, bufferSize, audioCtx.sampleRate);
+    var data = buffer.getChannelData(0);
+    for (var i = 0; i < bufferSize; i++) {
+      data[i] = Math.random() * 2 - 1;
+    }
+    var noise = audioCtx.createBufferSource();
+    noise.buffer = buffer;
+    var filter = audioCtx.createBiquadFilter();
+    filter.type = "lowpass";
+    filter.frequency.value = 1800;
+    var gain = audioCtx.createGain();
+    gain.gain.setValueAtTime(0.3, time);
+    gain.gain.exponentialRampToValueAtTime(0.01, time + 0.1);
+    noise.connect(filter);
+    filter.connect(gain);
+    gain.connect(analyser);
+    noise.start(time);
+  }
+
+  function scheduler() {
+    var dur = stepDuration();
+    while (nextStepTime < audioCtx.currentTime + 0.1) {
+      if (!isPlaying) return;
+      var pattern = [1, 2, 1, 4];
+      var freq = baseNotes[currentNoteIndex] * pattern[stepCount % 4];
+      createSynth(freq, nextStepTime);
+      if (drumsOn && stepCount % 4 === 0) playKick(nextStepTime);
+      if (drumsOn && stepCount % 4 === 2) playSnare(nextStepTime);
+      nextStepTime += dur;
+      stepCount++;
+    }
+    requestAnimationFrame(scheduler);
   }
 
   // ====== NEON GREEN PYRAMID ======
@@ -404,17 +669,15 @@ html, body {
     vizCanvas.width = w;
     vizCanvas.height = h;
 
-    var cx   = w / 2;
+    var cx    = w / 2;
     var apexX = cx,  apexY = h * 0.14;
     var baseY = h * 0.82;
     var baseL = w * 0.12, baseR = w * 0.88;
 
-    // Background
     vizCtx.fillStyle = "#f2f1ef";
     vizCtx.fillRect(0, 0, w, h);
 
-    // Draw pyramid with layered glow passes
-    // (outermost glow first, solid edge last)
+    // Layered glow passes (outermost first, crisp edge last)
     var passes = [
       { blur: 32, lineWidth: 14, alpha: 0.10 },
       { blur: 18, lineWidth:  9, alpha: 0.22 },
@@ -425,13 +688,13 @@ html, body {
     for (var i = 0; i < passes.length; i++) {
       var p = passes[i];
       vizCtx.save();
-      vizCtx.globalAlpha    = p.alpha;
-      vizCtx.strokeStyle    = NEON;
-      vizCtx.shadowColor    = NEON;
-      vizCtx.shadowBlur     = p.blur;
-      vizCtx.lineWidth      = p.lineWidth;
-      vizCtx.lineJoin       = "round";
-      vizCtx.lineCap        = "round";
+      vizCtx.globalAlpha  = p.alpha;
+      vizCtx.strokeStyle  = NEON;
+      vizCtx.shadowColor  = NEON;
+      vizCtx.shadowBlur   = p.blur;
+      vizCtx.lineWidth    = p.lineWidth;
+      vizCtx.lineJoin     = "round";
+      vizCtx.lineCap      = "round";
       vizCtx.beginPath();
       vizCtx.moveTo(apexX, apexY);
       vizCtx.lineTo(baseR, baseY);
@@ -441,7 +704,7 @@ html, body {
       vizCtx.restore();
     }
 
-    // Very subtle neon fill
+    // Subtle neon fill
     vizCtx.save();
     vizCtx.globalAlpha = 0.05;
     vizCtx.fillStyle = NEON;
@@ -454,15 +717,280 @@ html, body {
     vizCtx.restore();
   }
 
-  // ====== INIT ======
+  // ====== ROTARY KNOBS (iOS 9 touch-safe) ======
 
-  for (var i = 0; i < knobConfigs.length; i++) {
-    drawKnob(knobConfigs[i]);
+  var knobConfigs = [
+    { id: "tempo",  param: "tempo",  valId: "val-tempo",  unitId: "unit-tempo",  format: function(v){ return bpmFromParam(v) + " BPM"; }, color: "#2a2a2a" },
+    { id: "delay",  param: "delay",  valId: "val-delay",  unitId: "unit-delay",  format: function(v){ return Math.round(v * 100) + "%"; }, color: "#b8860b" },
+    { id: "reverb", param: "reverb", valId: "val-reverb", unitId: "unit-reverb", format: function(v){ return Math.round(v * 100) + "%"; }, color: "#2d6da4" },
+    { id: "drive",  param: "drive",  valId: "val-drive",  unitId: "unit-drive",  format: function(v){ return Math.round(v * 100) + "%"; }, color: "#c0392b" }
+  ];
+
+  var activeKnobCfg = null;
+  var knobTouchId = null;
+  var knobStartY = 0;
+  var knobStartVal = 0;
+
+  function drawKnob(cfg) {
+    var canvas = document.getElementById("knob-" + cfg.id);
+    var c = canvas.getContext("2d");
+    var v = params[cfg.param];
+    var cx = 80, cy = 80, r = 56;
+    var startAngle = 0.75 * Math.PI;
+
+    c.clearRect(0, 0, 160, 160);
+
+    // Track bg
+    c.beginPath();
+    c.arc(cx, cy, r, startAngle, 0.25 * Math.PI, false);
+    c.lineWidth = 6;
+    c.strokeStyle = "#ddd";
+    c.stroke();
+
+    // Active arc
+    var endAngle = startAngle + v * 1.5 * Math.PI;
+    if (v > 0.005) {
+      c.beginPath();
+      c.arc(cx, cy, r, startAngle, endAngle, false);
+      c.lineWidth = 6;
+      c.strokeStyle = cfg.color;
+      c.shadowBlur = 4;
+      c.shadowColor = cfg.color;
+      c.stroke();
+      c.shadowBlur = 0;
+    }
+
+    // Knob body
+    c.beginPath();
+    c.arc(cx, cy, 36, 0, 2 * Math.PI);
+    c.fillStyle = "#fff";
+    c.strokeStyle = "#bbb";
+    c.lineWidth = 2;
+    c.fill();
+    c.stroke();
+
+    // Indicator line
+    var indAngle = startAngle + v * 1.5 * Math.PI;
+    var ix1 = cx + Math.cos(indAngle) * 16;
+    var iy1 = cy + Math.sin(indAngle) * 16;
+    var ix2 = cx + Math.cos(indAngle) * 33;
+    var iy2 = cy + Math.sin(indAngle) * 33;
+    c.beginPath();
+    c.moveTo(ix1, iy1);
+    c.lineTo(ix2, iy2);
+    c.lineWidth = 4;
+    c.strokeStyle = cfg.color;
+    c.lineCap = "round";
+    c.stroke();
+    c.lineCap = "butt";
+
+    document.getElementById(cfg.valId).textContent = cfg.format(v);
+    document.getElementById(cfg.valId).style.color = cfg.color;
   }
 
-  drawPyramid();
+  function drawAllKnobs() {
+    for (var i = 0; i < knobConfigs.length; i++) {
+      drawKnob(knobConfigs[i]);
+    }
+  }
 
-  // Redraw only on resize — no continuous rAF loop needed
+  function findKnobByUnitId(id) {
+    for (var i = 0; i < knobConfigs.length; i++) {
+      if (knobConfigs[i].unitId === id) return knobConfigs[i];
+    }
+    return null;
+  }
+
+  function applyKnobValue(cfg, newVal) {
+    if (newVal < 0) newVal = 0;
+    if (newVal > 1) newVal = 1;
+    params[cfg.param] = newVal;
+    if (cfg.param === "delay") updateDelay(newVal);
+    if (cfg.param === "reverb") updateReverb(newVal);
+    if (cfg.param === "drive") updateDrive(newVal);
+    drawKnob(cfg);
+  }
+
+  // Attach touch/mouse to each .knob-unit
+  var knobUnits = document.querySelectorAll(".knob-unit");
+  for (var ki = 0; ki < knobUnits.length; ki++) {
+    (function (unit) {
+      unit.addEventListener("touchstart", function (e) {
+        e.preventDefault();
+        e.stopPropagation();
+        var cfg = findKnobByUnitId(unit.id);
+        if (!cfg) return;
+        var touch = e.changedTouches[0];
+        activeKnobCfg = cfg;
+        knobTouchId = touch.identifier;
+        knobStartY = touch.clientY;
+        knobStartVal = params[cfg.param];
+        unit.className = unit.className + " touching";
+      }, false);
+
+      unit.addEventListener("mousedown", function (e) {
+        e.preventDefault();
+        e.stopPropagation();
+        var cfg = findKnobByUnitId(unit.id);
+        if (!cfg) return;
+        activeKnobCfg = cfg;
+        knobTouchId = null;
+        knobStartY = e.clientY;
+        knobStartVal = params[cfg.param];
+        unit.className = unit.className + " touching";
+      }, false);
+    })(knobUnits[ki]);
+  }
+
+  document.addEventListener("touchmove", function (e) {
+    if (!activeKnobCfg) return;
+    var touch = null;
+    for (var t = 0; t < e.changedTouches.length; t++) {
+      if (e.changedTouches[t].identifier === knobTouchId) {
+        touch = e.changedTouches[t];
+        break;
+      }
+    }
+    if (!touch) return;
+    var dy = knobStartY - touch.clientY;
+    var newVal = knobStartVal + dy / 120;
+    applyKnobValue(activeKnobCfg, newVal);
+  }, false);
+
+  document.addEventListener("touchend", function (e) {
+    if (!activeKnobCfg) return;
+    for (var t = 0; t < e.changedTouches.length; t++) {
+      if (e.changedTouches[t].identifier === knobTouchId) {
+        releaseKnob();
+        break;
+      }
+    }
+  }, false);
+
+  document.addEventListener("touchcancel", function () {
+    if (activeKnobCfg) releaseKnob();
+  }, false);
+
+  document.addEventListener("mousemove", function (e) {
+    if (!activeKnobCfg) return;
+    e.preventDefault();
+    var dy = knobStartY - e.clientY;
+    var newVal = knobStartVal + dy / 120;
+    applyKnobValue(activeKnobCfg, newVal);
+  }, false);
+
+  document.addEventListener("mouseup", function () {
+    if (activeKnobCfg) releaseKnob();
+  }, false);
+
+  function releaseKnob() {
+    if (activeKnobCfg) {
+      var unitEl = document.getElementById(activeKnobCfg.unitId);
+      if (unitEl) {
+        unitEl.className = unitEl.className.replace(/\btouching\b/g, "").replace(/\s+/g, " ").trim();
+      }
+    }
+    activeKnobCfg = null;
+    knobTouchId = null;
+  }
+
+  // ====== HOLD / STOP / DRUMS ======
+
+  var holdBtn = document.getElementById("hold-btn");
+  var holdLed = document.getElementById("hold-led");
+  var stopBtn = document.getElementById("stop-btn");
+  var drumsBtn = document.getElementById("drums-btn");
+  var drumsLed = document.getElementById("drums-led");
+
+  drumsLed.className = "led on-amber";
+
+  function toggleDrums() {
+    drumsOn = !drumsOn;
+    if (drumsOn) {
+      drumsBtn.className = "btn-transport drums-on";
+      drumsLed.className = "led on-amber";
+    } else {
+      drumsBtn.className = "btn-transport";
+      drumsLed.className = "led";
+    }
+  }
+
+  function toggleHold() {
+    holdMode = !holdMode;
+    if (holdMode) {
+      holdBtn.className = "btn-transport hold-on";
+      holdLed.className = "led on";
+    } else {
+      holdBtn.className = "btn-transport";
+      holdLed.className = "led";
+      if (holdActive) doStop();
+    }
+  }
+
+  function fullStop() {
+    doStop();
+    holdMode = false;
+    holdBtn.className = "btn-transport";
+    holdLed.className = "led";
+  }
+
+  drumsBtn.addEventListener("touchstart", function (e) { e.preventDefault(); e.stopPropagation(); toggleDrums(); }, false);
+  drumsBtn.addEventListener("mousedown", function (e) { e.preventDefault(); toggleDrums(); }, false);
+  holdBtn.addEventListener("touchstart", function (e) { e.preventDefault(); e.stopPropagation(); toggleHold(); }, false);
+  holdBtn.addEventListener("mousedown", function (e) { e.preventDefault(); toggleHold(); }, false);
+  stopBtn.addEventListener("touchstart", function (e) { e.preventDefault(); e.stopPropagation(); fullStop(); }, false);
+  stopBtn.addEventListener("mousedown", function (e) { e.preventDefault(); fullStop(); }, false);
+
+  // ====== KEY LISTENERS ======
+
+  window.addEventListener("keydown", function (e) {
+    var key = e.key.toLowerCase();
+    if (keyMapObj.hasOwnProperty(key) && !e.repeat) {
+      if (holdActive) doStop();
+      activeKey = key;
+      startSequence(keyMapObj[key]);
+    }
+  }, false);
+
+  window.addEventListener("keyup", function (e) {
+    var key = e.key.toLowerCase();
+    if (key === activeKey) {
+      activeKey = null;
+      stopSequence();
+    }
+  }, false);
+
+  var keyButtons = document.querySelectorAll(".key");
+  for (var mi = 0; mi < keyButtons.length; mi++) {
+    (function (btn) {
+      btn.addEventListener("touchstart", function (e) {
+        e.preventDefault();
+        e.stopPropagation();
+        if (holdActive) doStop();
+        var idx = parseInt(btn.getAttribute("data-note"), 10);
+        startSequence(idx);
+      }, false);
+      btn.addEventListener("touchend", function (e) {
+        e.preventDefault();
+        stopSequence();
+      }, false);
+      btn.addEventListener("touchcancel", function () {
+        if (!holdMode) stopSequence();
+      }, false);
+      btn.addEventListener("mousedown", function (e) {
+        e.preventDefault();
+        if (holdActive) doStop();
+        var idx = parseInt(btn.getAttribute("data-note"), 10);
+        startSequence(idx);
+      }, false);
+      btn.addEventListener("mouseup", function () { stopSequence(); }, false);
+      btn.addEventListener("mouseleave", function () { if (!holdMode) stopSequence(); }, false);
+    })(keyButtons[mi]);
+  }
+
+  // ====== INIT ======
+  drawAllKnobs();
+  drawPyramid();
   window.addEventListener("resize", drawPyramid, false);
 
 })();
