@@ -1,0 +1,786 @@
+<!DOCTYPE html>
+<!--
+  Neon-Synth — iOS 9-optimised single-file synth app
+  Optimisation notes
+  ─────────────────────────────────────────────────────────────────────────────
+  1.  Single HTML file – eliminates extra HTTP round-trips.
+  2.  No external fonts / scripts / stylesheets – zero blocking resources.
+  3.  ES5 throughout – no transpilation needed; no polyfill overhead.
+  4.  Web Audio API (AudioContext) gated behind a user-gesture; iOS 9 Safari
+      refuses to start audio until a touch/click event has fired.
+  5.  All CSS uses -webkit- prefixes where iOS 9 requires them:
+        -webkit-transform, -webkit-transition, -webkit-user-select, etc.
+  6.  GPU-composited layers via -webkit-transform: translateZ(0) on elements
+      that animate – avoids main-thread repaints on slow A7/A8 chips.
+  7.  "will-change" deliberately avoided: Safari 9 has an incomplete
+      implementation that can bloat memory on constrained devices.
+  8.  touch-action and -webkit-tap-highlight-color suppress iOS 9's 300 ms
+      click delay without requiring a JS library.
+  9.  Passive touchstart listeners (feature-detected at runtime) reduce
+      scroll jank; falls back gracefully on iOS 9.
+  10. DOM references cached in local variables – avoids repeated querySelector.
+  11. requestAnimationFrame used only for the VU-meter animation; one rAF loop
+      total, not one per key.
+  12. Oscillator nodes are created and discarded per-note (one-shot pattern)
+      so the AudioContext node graph stays small.
+  13. GainNode envelope (attack / release) implemented with setTargetAtTime
+      instead of linearRampToValueAtTime – smoother on limited DSP threads.
+  14. Inline <style> placed in <head>; inline <script> placed before </body>
+      so the HTML parser can paint the keys before JS runs.
+  15. No CSS grid – iOS 9 Safari shipped only a prefixed, draft grid; flexbox
+      (-webkit-flex) used throughout instead.
+-->
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <!-- Width=device-width prevents iOS 9 from scaling down the viewport. -->
+  <!-- initial-scale=1 prevents a double-tap zoom quirk in Safari 9.       -->
+  <!-- viewport-fit not used – only available from iOS 11.                  -->
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+
+  <!-- Standalone / fullscreen hints for Add-to-Home-Screen users -->
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Neon Synth">
+
+  <!-- theme-color tints the Safari chrome (iOS 15+, harmless on iOS 9) -->
+  <meta name="theme-color" content="#0a0a1a">
+
+  <title>Neon Synth</title>
+
+  <style>
+    /* ── Reset ──────────────────────────────────────────────────────────── */
+    *, *:before, *:after {
+      -webkit-box-sizing: border-box;
+              box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    /* ── Root ───────────────────────────────────────────────────────────── */
+    html, body {
+      height: 100%;
+      overflow: hidden;             /* prevents iOS 9 bounce on the page     */
+      background: #0a0a1a;
+      color: #e0e0ff;
+      font-family: -apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif;
+      /* Suppress iOS 9 callout and selection on long-press */
+      -webkit-user-select: none;
+          -ms-user-select: none;
+              user-select: none;
+      -webkit-touch-callout: none;
+    }
+
+    /* ── Layout shell ───────────────────────────────────────────────────── */
+    #app {
+      display: -webkit-flex;
+      display:         flex;
+      -webkit-flex-direction: column;
+              flex-direction: column;
+      height: 100%;
+      padding: 12px;
+    }
+
+    /* ── Header ─────────────────────────────────────────────────────────── */
+    header {
+      text-align: center;
+      padding-bottom: 8px;
+    }
+    header h1 {
+      font-size: 1.4em;
+      letter-spacing: 0.2em;
+      text-transform: uppercase;
+      color: #bb86fc;
+      /* GPU layer for the glow pulse animation */
+      -webkit-transform: translateZ(0);
+              transform: translateZ(0);
+    }
+
+    /* ── Controls row ───────────────────────────────────────────────────── */
+    #controls {
+      display: -webkit-flex;
+      display:         flex;
+      -webkit-flex-wrap: wrap;
+              flex-wrap: wrap;
+      -webkit-justify-content: center;
+              justify-content: center;
+      gap: 10px;                    /* gap on flex is iOS 14.5+; safe here   */
+      padding: 8px 0;
+    }
+
+    /* gap fallback for iOS 9: use margin on children */
+    #controls > * {
+      margin: 5px;
+    }
+
+    .ctrl-group {
+      display: -webkit-flex;
+      display:         flex;
+      -webkit-flex-direction: column;
+              flex-direction: column;
+      -webkit-align-items: center;
+              align-items: center;
+      min-width: 70px;
+    }
+    .ctrl-group label {
+      font-size: 0.65em;
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      color: #888;
+      margin-bottom: 4px;
+    }
+
+    /* Native range – styled minimally; complex thumb CSS costs paint budget */
+    input[type="range"] {
+      -webkit-appearance: none;
+              appearance: none;
+      width: 90px;
+      height: 4px;
+      background: #2a2a4a;
+      border-radius: 2px;
+      outline: none;
+      cursor: pointer;
+    }
+    input[type="range"]::-webkit-slider-thumb {
+      -webkit-appearance: none;
+      width: 16px;
+      height: 16px;
+      border-radius: 50%;
+      background: #bb86fc;
+    }
+
+    select {
+      background: #1a1a2e;
+      color: #e0e0ff;
+      border: 1px solid #444;
+      border-radius: 4px;
+      padding: 4px 6px;
+      font-size: 0.8em;
+      /* Remove iOS 9 default styling */
+      -webkit-appearance: none;
+              appearance: none;
+    }
+
+    /* ── VU meter ────────────────────────────────────────────────────────── */
+    #vu-wrap {
+      display: -webkit-flex;
+      display:         flex;
+      -webkit-justify-content: center;
+              justify-content: center;
+      margin: 4px 0;
+    }
+    #vu-bar {
+      width: 180px;
+      height: 8px;
+      background: #1a1a2e;
+      border-radius: 4px;
+      overflow: hidden;
+    }
+    #vu-fill {
+      height: 100%;
+      width: 0%;
+      background: -webkit-linear-gradient(left, #03dac6, #bb86fc, #cf6679);
+      background:         linear-gradient(to right, #03dac6, #bb86fc, #cf6679);
+      border-radius: 4px;
+      /* GPU-composited resize – avoids layout on width change */
+      -webkit-transform: translateZ(0);
+              transform: translateZ(0);
+      /* transition smooths the 60 fps rAF updates */
+      -webkit-transition: width 0.05s linear;
+              transition: width 0.05s linear;
+    }
+
+    /* ── Keyboard ────────────────────────────────────────────────────────── */
+    #keyboard-wrap {
+      -webkit-flex: 1;
+              flex: 1;
+      display: -webkit-flex;
+      display:         flex;
+      -webkit-align-items: flex-end;
+              align-items: flex-end;
+      overflow-x: auto;
+      overflow-y: hidden;
+      /* Custom scrollbar hidden on iOS anyway; declaration is harmless */
+      -webkit-overflow-scrolling: touch;  /* momentum scroll on iOS 9 */
+      padding-bottom: 4px;
+    }
+
+    #keyboard {
+      display: -webkit-flex;
+      display:         flex;
+      position: relative;
+      min-height: 140px;
+      margin: 0 auto;
+    }
+
+    /* ── White keys ──────────────────────────────────────────────────────── */
+    .key-white {
+      position: relative;
+      width: 44px;
+      height: 140px;
+      background: -webkit-linear-gradient(top, #d8d8f0, #ffffff);
+      background:         linear-gradient(to bottom, #d8d8f0, #ffffff);
+      border: 1px solid #999;
+      border-radius: 0 0 6px 6px;
+      cursor: pointer;
+      /* Suppress 300 ms tap delay on iOS 9 without FastClick */
+      -webkit-tap-highlight-color: transparent;
+      /* Promote to own compositor layer */
+      -webkit-transform: translateZ(0);
+              transform: translateZ(0);
+      /* Smooth press animation */
+      -webkit-transition: background 0.06s ease, -webkit-transform 0.06s ease;
+              transition: background 0.06s ease,         transform 0.06s ease;
+      /* Prevent text selection during multi-touch */
+      -webkit-user-select: none;
+              user-select: none;
+    }
+    .key-white:active,
+    .key-white.active {
+      background: -webkit-linear-gradient(top, #aa88ff, #cc99ff);
+      background:         linear-gradient(to bottom, #aa88ff, #cc99ff);
+      -webkit-transform: translateZ(0) scaleY(0.97);
+              transform: translateZ(0) scaleY(0.97);
+      -webkit-transform-origin: top center;
+              transform-origin: top center;
+    }
+    .key-white .note-label {
+      position: absolute;
+      bottom: 6px;
+      left: 0;
+      right: 0;
+      text-align: center;
+      font-size: 0.55em;
+      color: #666;
+      pointer-events: none;
+    }
+
+    /* ── Black keys ──────────────────────────────────────────────────────── */
+    .key-black {
+      position: absolute;
+      top: 0;
+      width: 28px;
+      height: 88px;
+      background: -webkit-linear-gradient(top, #1a1a2e, #333366);
+      background:         linear-gradient(to bottom, #1a1a2e, #333366);
+      border: 1px solid #555;
+      border-radius: 0 0 4px 4px;
+      z-index: 2;
+      cursor: pointer;
+      -webkit-tap-highlight-color: transparent;
+      -webkit-transform: translateZ(0);
+              transform: translateZ(0);
+      -webkit-transition: background 0.06s ease;
+              transition: background 0.06s ease;
+      -webkit-user-select: none;
+              user-select: none;
+    }
+    .key-black:active,
+    .key-black.active {
+      background: -webkit-linear-gradient(top, #6633aa, #9955cc);
+      background:         linear-gradient(to bottom, #6633aa, #9955cc);
+    }
+
+    /* ── Active-note display ─────────────────────────────────────────────── */
+    #note-display {
+      text-align: center;
+      font-size: 0.75em;
+      color: #03dac6;
+      height: 18px;
+      letter-spacing: 0.15em;
+      margin: 4px 0;
+    }
+
+    /* ── Footer ──────────────────────────────────────────────────────────── */
+    footer {
+      text-align: center;
+      font-size: 0.6em;
+      color: #444;
+      padding-top: 4px;
+    }
+  </style>
+</head>
+<body>
+<div id="app">
+  <header>
+    <h1>Neon Synth</h1>
+  </header>
+
+  <!-- Controls -->
+  <div id="controls">
+    <div class="ctrl-group">
+      <label>Wave</label>
+      <select id="wave-select">
+        <option value="sine">Sine</option>
+        <option value="triangle">Triangle</option>
+        <option value="square">Square</option>
+        <option value="sawtooth">Sawtooth</option>
+      </select>
+    </div>
+    <div class="ctrl-group">
+      <label>Volume</label>
+      <input type="range" id="vol-knob" min="0" max="1" step="0.01" value="0.7">
+    </div>
+    <div class="ctrl-group">
+      <label>Attack</label>
+      <input type="range" id="attack-knob" min="0.001" max="0.5" step="0.001" value="0.02">
+    </div>
+    <div class="ctrl-group">
+      <label>Release</label>
+      <input type="range" id="release-knob" min="0.05" max="2" step="0.01" value="0.3">
+    </div>
+    <div class="ctrl-group">
+      <label>Reverb</label>
+      <input type="range" id="reverb-knob" min="0" max="1" step="0.01" value="0.2">
+    </div>
+    <div class="ctrl-group">
+      <label>Octave</label>
+      <select id="octave-select">
+        <option value="3">3</option>
+        <option value="4" selected>4</option>
+        <option value="5">5</option>
+        <option value="6">6</option>
+      </select>
+    </div>
+  </div>
+
+  <!-- VU meter -->
+  <div id="vu-wrap"><div id="vu-bar"><div id="vu-fill"></div></div></div>
+
+  <!-- Active note name -->
+  <div id="note-display"></div>
+
+  <!-- Keyboard -->
+  <div id="keyboard-wrap">
+    <div id="keyboard"></div>
+  </div>
+
+  <footer>Tap a key &bull; iOS 9 optimised</footer>
+</div>
+
+<!--
+  Script at the bottom of <body>:
+  – HTML is fully parsed and painted before JS executes.
+  – No render-blocking script in <head>.
+-->
+<script>
+/* ============================================================
+   Neon Synth — ES5 compatible (no ES6+)
+   Tested target: iOS 9 / Safari 9
+   ============================================================ */
+(function () {
+  'use strict';
+
+  /* ── Feature detection ─────────────────────────────────────────────── */
+  var AudioCtx = window.AudioContext || window.webkitAudioContext;
+  if (!AudioCtx) {
+    document.getElementById('note-display').textContent = 'Web Audio not supported';
+    return;
+  }
+
+  /* ── Cached DOM references ─────────────────────────────────────────── */
+  var waveSelect   = document.getElementById('wave-select');
+  var volKnob      = document.getElementById('vol-knob');
+  var attackKnob   = document.getElementById('attack-knob');
+  var releaseKnob  = document.getElementById('release-knob');
+  var reverbKnob   = document.getElementById('reverb-knob');
+  var octaveSelect = document.getElementById('octave-select');
+  var keyboard     = document.getElementById('keyboard');
+  var noteDisplay  = document.getElementById('note-display');
+  var vuFill       = document.getElementById('vu-fill');
+
+  /* ── Audio context (lazy-init on first touch for iOS 9) ────────────── */
+  var ctx = null;
+  var masterGain = null;
+  var reverbNode = null;   /* ConvolverNode */
+  var reverbGain = null;   /* wet gain      */
+  var dryGain    = null;   /* dry gain      */
+  var analyser   = null;
+
+  /* ── Note definitions (two octaves: C to B) ────────────────────────── */
+  /*
+   * Semi-tone indices relative to C:
+   *   C  C# D  D# E  F  F# G  G# A  A# B
+   *   0  1  2  3  4  5  6  7  8  9  10 11
+   */
+  var NOTES = [
+    { name: 'C',  semi: 0,  black: false },
+    { name: 'C#', semi: 1,  black: true  },
+    { name: 'D',  semi: 2,  black: false },
+    { name: 'D#', semi: 3,  black: true  },
+    { name: 'E',  semi: 4,  black: false },
+    { name: 'F',  semi: 5,  black: false },
+    { name: 'F#', semi: 6,  black: true  },
+    { name: 'G',  semi: 7,  black: false },
+    { name: 'G#', semi: 8,  black: true  },
+    { name: 'A',  semi: 9,  black: false },
+    { name: 'A#', semi: 10, black: true  },
+    { name: 'B',  semi: 11, black: false }
+  ];
+
+  /* ── Frequency calculation ─────────────────────────────────────────── */
+  /* A4 = 440 Hz; MIDI number of C4 = 60 */
+  function noteFreq(octave, semi) {
+    var midi = (octave * 12 + 12) + semi;
+    return 440 * Math.pow(2, (midi - 69) / 12);
+  }
+
+  /* ── Build impulse response for simple convolution reverb ──────────── */
+  /*
+   * Synthetic IR avoids loading an audio file (network request).
+   * Length 1 s at context.sampleRate – short enough for iOS 9 performance.
+   */
+  function buildIR(actx) {
+    var sampleRate = actx.sampleRate;
+    var length     = sampleRate * 1;          /* 1 second */
+    var ir         = actx.createBuffer(2, length, sampleRate);
+    var decay      = 2.5;
+    var i, ch;
+    for (ch = 0; ch < 2; ch++) {
+      var data = ir.getChannelData(ch);
+      for (i = 0; i < length; i++) {
+        /* Exponentially-decaying white noise */
+        data[i] = (Math.random() * 2 - 1) *
+                  Math.pow(1 - i / length, decay);
+      }
+    }
+    return ir;
+  }
+
+  /* ── Initialise AudioContext on first user interaction ─────────────── */
+  function initAudio() {
+    if (ctx) { return; }
+    ctx = new AudioCtx();
+
+    analyser = ctx.createAnalyser();
+    analyser.fftSize = 256;           /* small FFT = cheap on iOS 9 */
+
+    masterGain = ctx.createGain();
+    masterGain.gain.value = parseFloat(volKnob.value);
+
+    /* Reverb chain: osc → masterGain → dryGain → destination
+     *                                → reverbGain → convolver → destination */
+    dryGain = ctx.createGain();
+    dryGain.gain.value = 1 - parseFloat(reverbKnob.value);
+
+    reverbGain = ctx.createGain();
+    reverbGain.gain.value = parseFloat(reverbKnob.value);
+
+    reverbNode = ctx.createConvolver();
+    reverbNode.buffer = buildIR(ctx);
+
+    masterGain.connect(dryGain);
+    masterGain.connect(reverbGain);
+    dryGain.connect(analyser);
+    reverbGain.connect(reverbNode);
+    reverbNode.connect(analyser);
+    analyser.connect(ctx.destination);
+  }
+
+  /* ── Play a note (one-shot oscillator pattern) ─────────────────────── */
+  /*
+   * Each key press creates a fresh OscillatorNode; it is disconnected on
+   * release. This avoids accumulating a large node graph over time and is
+   * efficient on iOS 9's single-threaded audio thread.
+   */
+  var activeNodes = {};   /* keyed by element ID */
+
+  function playNote(keyEl, octave, semi) {
+    initAudio();
+
+    var id = keyEl.getAttribute('data-id');
+    if (activeNodes[id]) { return; }   /* already playing (multi-touch guard) */
+
+    var freq    = noteFreq(octave, semi);
+    var attack  = parseFloat(attackKnob.value);
+
+    var osc  = ctx.createOscillator();
+    var gain = ctx.createGain();
+
+    osc.type = waveSelect.value;
+    osc.frequency.value = freq;
+
+    /* Amplitude envelope – attack */
+    gain.gain.setValueAtTime(0.0001, ctx.currentTime);
+    gain.gain.setTargetAtTime(
+      parseFloat(volKnob.value),
+      ctx.currentTime,
+      attack / 3            /* setTargetAtTime tau = attack/3 → ~95% in attack s */
+    );
+
+    osc.connect(gain);
+    gain.connect(masterGain);
+    osc.start();
+
+    activeNodes[id] = { osc: osc, gain: gain };
+    keyEl.classList.add('active');
+    noteDisplay.textContent = NOTES[semi % 12].name + octave;
+  }
+
+  function stopNote(keyEl) {
+    var id   = keyEl.getAttribute('data-id');
+    var node = activeNodes[id];
+    if (!node) { return; }
+
+    var release = parseFloat(releaseKnob.value);
+    var now     = ctx.currentTime;
+
+    /* Release envelope */
+    node.gain.gain.cancelScheduledValues(now);
+    node.gain.gain.setValueAtTime(node.gain.gain.value, now);
+    node.gain.gain.setTargetAtTime(0.0001, now, release / 3);
+
+    /* Disconnect after release finishes – release * 4 is ~98% decayed */
+    var osc  = node.osc;
+    var gain = node.gain;
+    setTimeout(function () {
+      try {
+        osc.stop();
+        osc.disconnect();
+        gain.disconnect();
+      } catch (e) { /* already stopped */ }
+    }, release * 4 * 1000);
+
+    delete activeNodes[id];
+    keyEl.classList.remove('active');
+    noteDisplay.textContent = '';
+  }
+
+  /* ── Build keyboard ────────────────────────────────────────────────── */
+  /*
+   * Two octaves rendered.
+   * Black key left-offset uses pre-calculated pixel values to avoid layout
+   * thrashing; a lookup table is cheaper than computing getBoundingClientRect
+   * per key in a loop.
+   *
+   * White key width = 44 px; positions (centre of black key gap):
+   *   C# = 44*1  - 14 = 30
+   *   D# = 44*2  - 14 = 74
+   *   F# = 44*4  - 14 = 162
+   *   G# = 44*5  - 14 = 206
+   *   A# = 44*6  - 14 = 250
+   */
+  var BLACK_OFFSETS = { 1: 30, 3: 74, 6: 162, 8: 206, 10: 250 };
+  var WHITE_KEY_W   = 44;   /* px – matches CSS */
+  var NUM_OCTAVES   = 2;
+
+  function buildKeyboard() {
+    var frag      = document.createDocumentFragment();
+    var whiteIdx  = 0;
+    var baseOctave = parseInt(octaveSelect.value, 10);
+    var keyId     = 0;
+
+    var oct, n, note, el, octaveOffset;
+    for (oct = 0; oct < NUM_OCTAVES; oct++) {
+      octaveOffset = oct * 7 * WHITE_KEY_W;   /* 7 white keys per octave */
+
+      for (n = 0; n < NOTES.length; n++) {
+        note = NOTES[n];
+        el   = document.createElement('div');
+        el.setAttribute('data-id',   String(keyId++));
+        el.setAttribute('data-semi', String(note.semi));
+        el.setAttribute('data-oct',  String(baseOctave + oct));
+
+        if (note.black) {
+          el.className = 'key-black';
+          el.style.left = (octaveOffset + BLACK_OFFSETS[note.semi]) + 'px';
+        } else {
+          el.className = 'key-white';
+          whiteIdx++;
+        }
+
+        if (!note.black) {
+          var label = document.createElement('span');
+          label.className = 'note-label';
+          label.textContent = note.name;
+          el.appendChild(label);
+        }
+
+        frag.appendChild(el);
+      }
+    }
+
+    keyboard.innerHTML = '';
+    keyboard.appendChild(frag);
+
+    /* Set keyboard container width = total white keys * key width */
+    var totalWhite = NUM_OCTAVES * 7;
+    keyboard.style.width = (totalWhite * WHITE_KEY_W) + 'px';
+  }
+
+  buildKeyboard();
+
+  /* ── Touch / mouse event delegation ───────────────────────────────── */
+  /*
+   * Single delegated listener on #keyboard instead of one listener per key.
+   * This is significantly cheaper on iOS 9's JS engine for 24+ keys.
+   *
+   * Multi-touch: each changed touch is processed independently, enabling
+   * chords.
+   */
+
+  /* Detect passive event support (iOS 9 does not support passive) */
+  var passiveSupported = false;
+  try {
+    var opts = Object.defineProperty({}, 'passive', {
+      get: function () { passiveSupported = true; }
+    });
+    window.addEventListener('test', null, opts);
+    window.removeEventListener('test', null, opts);
+  } catch (e) {}
+
+  var listenerOpts = passiveSupported ? { passive: true } : false;
+
+  function keyFromTouch(touch) {
+    /* elementFromPoint returns the topmost element at touch coords */
+    var el = document.elementFromPoint(touch.clientX, touch.clientY);
+    if (!el) { return null; }
+    /* Walk up to find .key-white or .key-black (handles child spans) */
+    while (el && el !== keyboard) {
+      if (el.className && (el.className.indexOf('key-white') !== -1 ||
+                            el.className.indexOf('key-black') !== -1)) {
+        return el;
+      }
+      el = el.parentNode;
+    }
+    return null;
+  }
+
+  /* Map from touch identifier → key element for tracking touch moves */
+  var touchMap = {};
+
+  keyboard.addEventListener('touchstart', function (e) {
+    /* Do NOT call preventDefault here – passive listener on iOS 9 */
+    var touches = e.changedTouches;
+    var i, t, el;
+    for (i = 0; i < touches.length; i++) {
+      t  = touches[i];
+      el = keyFromTouch(t);
+      if (el) {
+        touchMap[t.identifier] = el;
+        playNote(el,
+          parseInt(el.getAttribute('data-oct'),  10),
+          parseInt(el.getAttribute('data-semi'), 10)
+        );
+      }
+    }
+  }, listenerOpts);
+
+  keyboard.addEventListener('touchend', function (e) {
+    var touches = e.changedTouches;
+    var i, t, el;
+    for (i = 0; i < touches.length; i++) {
+      t  = touches[i];
+      el = touchMap[t.identifier];
+      if (el) {
+        stopNote(el);
+        delete touchMap[t.identifier];
+      }
+    }
+  }, listenerOpts);
+
+  keyboard.addEventListener('touchcancel', function (e) {
+    var touches = e.changedTouches;
+    var i, t, el;
+    for (i = 0; i < touches.length; i++) {
+      t  = touches[i];
+      el = touchMap[t.identifier];
+      if (el) {
+        stopNote(el);
+        delete touchMap[t.identifier];
+      }
+    }
+  }, listenerOpts);
+
+  /* Mouse fallback (desktop / iOS 13+ pointer events) */
+  keyboard.addEventListener('mousedown', function (e) {
+    var el = e.target;
+    while (el && el !== keyboard) {
+      if (el.className && (el.className.indexOf('key-white') !== -1 ||
+                            el.className.indexOf('key-black') !== -1)) {
+        playNote(el,
+          parseInt(el.getAttribute('data-oct'),  10),
+          parseInt(el.getAttribute('data-semi'), 10)
+        );
+        return;
+      }
+      el = el.parentNode;
+    }
+  });
+  keyboard.addEventListener('mouseup', function (e) {
+    var el = e.target;
+    while (el && el !== keyboard) {
+      if (el.className && (el.className.indexOf('key-white') !== -1 ||
+                            el.className.indexOf('key-black') !== -1)) {
+        stopNote(el);
+        return;
+      }
+      el = el.parentNode;
+    }
+  });
+
+  /* ── Knob / select change handlers ────────────────────────────────── */
+  volKnob.addEventListener('change', function () {
+    if (masterGain) {
+      masterGain.gain.setTargetAtTime(
+        parseFloat(this.value), ctx.currentTime, 0.01
+      );
+    }
+  });
+
+  reverbKnob.addEventListener('change', function () {
+    if (!ctx) { return; }
+    var wet = parseFloat(this.value);
+    reverbGain.gain.setTargetAtTime(wet,       ctx.currentTime, 0.01);
+    dryGain.gain.setTargetAtTime(1 - wet, ctx.currentTime, 0.01);
+  });
+
+  octaveSelect.addEventListener('change', buildKeyboard);
+
+  /* ── VU meter — single rAF loop ────────────────────────────────────── */
+  /*
+   * One shared Uint8Array avoids allocating a new array each animation frame.
+   * We sample the analyser's time-domain data and compute RMS amplitude.
+   */
+  var vuData  = new Uint8Array(256);
+  var rafId   = null;
+
+  function updateVU() {
+    rafId = requestAnimationFrame(updateVU);
+    if (!analyser) { return; }
+
+    analyser.getByteTimeDomainData(vuData);
+
+    var sum = 0, v;
+    var len = vuData.length;
+    for (var i = 0; i < len; i++) {
+      v = (vuData[i] - 128) / 128;
+      sum += v * v;
+    }
+    var rms = Math.sqrt(sum / len);
+    var pct = Math.min(rms * 400, 100);          /* scale for visual clarity */
+    vuFill.style.width = pct.toFixed(1) + '%';
+  }
+
+  updateVU();
+
+  /* ── Handle visibility change to suspend/resume AudioContext ────────── */
+  /*
+   * Suspending when the page is hidden avoids the iOS audio process
+   * staying awake in the background (saves battery on iPhone 6 / iPad Air 2).
+   */
+  document.addEventListener('visibilitychange', function () {
+    if (!ctx) { return; }
+    if (document.hidden) {
+      ctx.suspend();
+      cancelAnimationFrame(rafId);
+    } else {
+      ctx.resume();
+      updateVU();
+    }
+  });
+
+}());
+</script>
+</body>
+</html>
